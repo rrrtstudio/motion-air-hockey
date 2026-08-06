@@ -249,7 +249,6 @@
       this.receiving = false;
       this.receiveElapsed = 0;
       this.plan = this.defaultPlan();
-      this.missFlash = 0;
     }
 
     reset() {
@@ -258,7 +257,6 @@
       this.errorX = 0;
       this.errorTimer = 0;
       this.clearReceivePlan();
-      this.missFlash = 0;
     }
 
     clearReceivePlan() {
@@ -274,12 +272,14 @@
         offset: 0,
         reactionDelay: 0,
         speedScale: 1,
+        wrongWayTime: 0,
       };
     }
 
-    planIncoming(settings) {
+    planIncoming(settings, puck) {
       const miss = Math.random() < settings.missRate;
-      const side = Math.random() < 0.5 ? -1 : 1;
+      const predictedX = this.predictPuckX(puck);
+      const side = this.chooseMissSide(predictedX);
       const missKind = Math.floor(Math.random() * 3);
 
       this.plan = {
@@ -288,21 +288,42 @@
         offset: randomRange(-settings.cpuError, settings.cpuError),
         reactionDelay: 0,
         speedScale: 1,
+        wrongWayTime: 0,
       };
 
       if (miss && missKind === 0) {
-        this.plan.offset = side * randomRange(0.16, 0.24);
+        this.plan.offset = side * randomRange(0.2, 0.27);
         this.plan.reactionDelay = randomRange(0.04, 0.1);
         this.plan.speedScale = randomRange(0.72, 0.86);
       } else if (miss && missKind === 1) {
-        this.plan.offset = side * randomRange(0.08, 0.15);
+        this.plan.offset = side * randomRange(0.18, 0.25);
         this.plan.reactionDelay = randomRange(0.14, 0.26);
         this.plan.speedScale = randomRange(0.46, 0.62);
       } else if (miss) {
-        this.plan.offset = side * randomRange(0.2, 0.28);
+        this.plan.offset = side * randomRange(0.2, 0.3);
         this.plan.reactionDelay = randomRange(0.02, 0.08);
         this.plan.speedScale = randomRange(0.82, 0.96);
+        this.plan.wrongWayTime = randomRange(0.08, 0.16);
       }
+    }
+
+    predictPuckX(puck) {
+      if (puck.vy >= 0) {
+        return puck.x;
+      }
+      const secondsToTop = Math.abs((puck.y - FIELD.puckRadius) / Math.min(puck.vy, -0.05));
+      return clamp(puck.x + puck.vx * secondsToTop, FIELD.paddleWidth / 2, 1 - FIELD.paddleWidth / 2);
+    }
+
+    chooseMissSide(predictedX) {
+      const safeMissDistance = FIELD.paddleWidth / 2 + FIELD.puckRadius + 0.045;
+      if (predictedX - safeMissDistance < FIELD.paddleWidth / 2) {
+        return 1;
+      }
+      if (predictedX + safeMissDistance > 1 - FIELD.paddleWidth / 2) {
+        return -1;
+      }
+      return Math.random() < 0.5 ? -1 : 1;
     }
 
     update(dt, puck, difficulty) {
@@ -314,7 +335,7 @@
       if (incoming && !this.receiving) {
         this.receiving = true;
         this.receiveElapsed = 0;
-        this.planIncoming(settings);
+        this.planIncoming(settings, puck);
       } else if (!incoming) {
         this.receiving = false;
         this.receiveElapsed = 0;
@@ -337,6 +358,10 @@
         target = this.paddle.x + (target - this.paddle.x) * 0.18;
       }
 
+      if (incoming && this.plan.miss && this.receiveElapsed < this.plan.wrongWayTime) {
+        target = this.paddle.x - Math.sign(this.plan.offset || 1) * randomRange(0.08, 0.14);
+      }
+
       target = clamp(target + this.errorX + this.plan.offset, half, 1 - half);
       const speedScale = incoming ? this.plan.speedScale : 0.58;
       const moveSpeed = settings.cpuSpeed * speedScale;
@@ -344,7 +369,6 @@
       this.paddle.setX(this.paddle.x + delta, dt);
 
       this.charge.release();
-      this.missFlash = Math.max(0, this.missFlash - dt);
     }
   }
 
@@ -519,10 +543,6 @@
 
       if (previous.y > topLine && puck.y <= topLine && puck.vy < 0) {
         if (this.cpu.paddle.contains(puck.x)) {
-          if (this.cpu.plan.miss) {
-            this.missCpuReturn(topLine);
-            return;
-          }
           const cpuChargeRatio = Math.random() < DIFFICULTIES[this.difficulty].powerRate ? 1 : 0;
           this.reflectFromPaddle(this.cpu.paddle, cpuChargeRatio, 1);
           this.cpu.charge.consume();
@@ -531,39 +551,13 @@
       }
     }
 
-    missCpuReturn(topLine) {
-      const puck = this.puck;
-      const hitOffset = clamp((puck.x - this.cpu.paddle.x) / (FIELD.paddleWidth / 2), -1, 1);
-      const missSide = hitOffset === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(hitOffset);
-      const kind = this.cpu.plan.missKind;
-
-      this.cpu.missFlash = 0.24;
-      this.cpu.charge.consume();
-      puck.y = topLine - FIELD.puckRadius * 0.24;
-
-      if (kind === 0) {
-        puck.vx = clamp(puck.vx + missSide * randomRange(0.16, 0.24), -0.9, 0.9);
-        puck.vy = -Math.max(Math.abs(puck.vy) * 0.52, 0.32);
-      } else if (kind === 1) {
-        puck.vx = clamp(puck.vx + missSide * randomRange(0.08, 0.14), -0.9, 0.9);
-        puck.vy = -Math.max(Math.abs(puck.vy) * 0.72, 0.38);
-      } else {
-        puck.vx = clamp(puck.vx + missSide * randomRange(0.2, 0.3), -0.9, 0.9);
-        puck.vy = -Math.max(Math.abs(puck.vy) * 0.58, 0.36);
-      }
-
-      puck.stopped = false;
-      puck.stopTimer = 0;
-    }
-
     reflectFromPaddle(paddle, chargeRatio, direction) {
       const puck = this.puck;
       const settings = DIFFICULTIES[this.difficulty];
-      const cpuMisHit = paddle.side === "cpu" && this.cpu.plan?.miss;
       const hitOffset = clamp((puck.x - paddle.x) / (FIELD.paddleWidth / 2), -1, 1);
       const chargeBoost = 1 + chargeRatio * 1.35;
       const baseSpeed = 0.54;
-      const sideAccuracy = paddle.side === "cpu" ? settings.bounceAccuracy + (cpuMisHit ? 0.14 : 0) : 0.04;
+      const sideAccuracy = paddle.side === "cpu" ? settings.bounceAccuracy : 0.04;
       puck.vy = direction * clamp(baseSpeed * chargeBoost + Math.abs(puck.vy) * 0.38, 0.52, 1.36);
       puck.vx = clamp(
         hitOffset * 0.38 + paddle.vx * 0.18 + randomRange(-sideAccuracy, sideAccuracy),
@@ -777,22 +771,21 @@
     }
 
     drawPaddles() {
-      this.drawPaddle(this.game.cpu.paddle, 0, "#ff4f66", this.game.cpu.charge.ratio(), this.game.cpu.missFlash);
-      this.drawPaddle(this.game.player, 1, "#72d7ff", this.game.playerCharge.ratio(), 0);
+      this.drawPaddle(this.game.cpu.paddle, 0, "#ff4f66", this.game.cpu.charge.ratio());
+      this.drawPaddle(this.game.player, 1, "#72d7ff", this.game.playerCharge.ratio());
     }
 
-    drawPaddle(paddle, y, color, chargeRatio, missFlash) {
+    drawPaddle(paddle, y, color, chargeRatio) {
       const center = this.toScreen(paddle.x, y);
       const width = this.lengthX(FIELD.paddleWidth);
       const height = clamp(this.lengthY(FIELD.paddleDepth), 12, 22);
       const top = y === 0 ? center.y - height * 0.5 : center.y - height * 0.5;
-      const missShake = missFlash > 0 ? Math.sin(performance.now() * 0.05) * this.lengthX(0.01) : 0;
-      const x = center.x - width * 0.5 + missShake;
-      const glow = 0.18 + chargeRatio * 0.45 + missFlash * 0.75;
+      const x = center.x - width * 0.5;
+      const glow = 0.18 + chargeRatio * 0.45;
 
       ctx.save();
       ctx.shadowColor = color;
-      ctx.shadowBlur = 16 + chargeRatio * 22 + missFlash * 16;
+      ctx.shadowBlur = 16 + chargeRatio * 22;
       ctx.fillStyle = `rgba(247, 251, 255, ${glow})`;
       ctx.fillRect(x - 4, top - 4, width + 8, height + 8);
       ctx.shadowBlur = 0;
