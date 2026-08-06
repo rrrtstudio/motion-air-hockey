@@ -13,6 +13,10 @@
     exitButton: document.querySelector("#exitButton"),
     safetyOverlay: document.querySelector("#safetyOverlay"),
     startButton: document.querySelector("#startButton"),
+    matchOverlay: document.querySelector("#matchOverlay"),
+    resultTitle: document.querySelector("#resultTitle"),
+    playAgainButton: document.querySelector("#playAgainButton"),
+    titleButton: document.querySelector("#titleButton"),
     permissionMessage: document.querySelector("#permissionMessage"),
     difficultyOptions: document.querySelector("#difficultyOptions"),
     chargeGauge: document.querySelector("#chargeGauge"),
@@ -27,29 +31,33 @@
     stopSpeed: 0.065,
     tiltMaxDegrees: 45,
     tiltDeadZoneDegrees: 4,
+    winScore: 10,
   };
 
   const DIFFICULTIES = {
     easy: {
-      cpuSpeed: 0.58,
-      cpuError: 0.095,
+      cpuSpeed: 0.52,
+      cpuError: 0.07,
       cpuChargeStartY: 0.42,
-      cpuChargeDiscipline: 0.55,
       bounceAccuracy: 0.16,
+      missRate: 0.33,
+      powerRate: 0,
     },
     normal: {
-      cpuSpeed: 0.82,
-      cpuError: 0.055,
+      cpuSpeed: 0.78,
+      cpuError: 0.045,
       cpuChargeStartY: 0.56,
-      cpuChargeDiscipline: 0.78,
       bounceAccuracy: 0.09,
+      missRate: 0.2,
+      powerRate: 0.33,
     },
     hard: {
       cpuSpeed: 1.08,
       cpuError: 0.026,
       cpuChargeStartY: 0.7,
-      cpuChargeDiscipline: 1,
       bounceAccuracy: 0.04,
+      missRate: 0.1,
+      powerRate: 0.5,
     },
   };
 
@@ -241,6 +249,9 @@
       this.charge = new ChargeController();
       this.errorX = 0;
       this.errorTimer = 0;
+      this.receiving = false;
+      this.receiveElapsed = 0;
+      this.plan = this.defaultPlan();
     }
 
     reset() {
@@ -248,14 +259,68 @@
       this.charge.release();
       this.errorX = 0;
       this.errorTimer = 0;
+      this.receiving = false;
+      this.receiveElapsed = 0;
+      this.plan = this.defaultPlan();
+    }
+
+    defaultPlan() {
+      return {
+        miss: false,
+        power: false,
+        offset: 0,
+        reactionDelay: 0,
+        speedScale: 1,
+      };
+    }
+
+    planIncoming(settings) {
+      const miss = Math.random() < settings.missRate;
+      const power = !miss && Math.random() < settings.powerRate;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const missKind = Math.floor(Math.random() * 3);
+
+      this.plan = {
+        miss,
+        power,
+        offset: randomRange(-settings.cpuError, settings.cpuError),
+        reactionDelay: 0,
+        speedScale: 1,
+      };
+
+      if (miss && missKind === 0) {
+        this.plan.offset = side * randomRange(0.16, 0.24);
+        this.plan.reactionDelay = randomRange(0.04, 0.1);
+        this.plan.speedScale = randomRange(0.72, 0.86);
+      } else if (miss && missKind === 1) {
+        this.plan.offset = side * randomRange(0.08, 0.15);
+        this.plan.reactionDelay = randomRange(0.14, 0.26);
+        this.plan.speedScale = randomRange(0.46, 0.62);
+      } else if (miss) {
+        this.plan.offset = side * randomRange(0.2, 0.28);
+        this.plan.reactionDelay = randomRange(0.02, 0.08);
+        this.plan.speedScale = randomRange(0.82, 0.96);
+      }
     }
 
     update(dt, puck, difficulty) {
       const settings = DIFFICULTIES[difficulty];
       const half = FIELD.paddleWidth / 2;
       let target = 0.5;
+      const incoming = puck.vy < 0;
 
-      if (puck.vy < 0) {
+      if (incoming && !this.receiving) {
+        this.receiving = true;
+        this.receiveElapsed = 0;
+        this.planIncoming(settings);
+      } else if (!incoming) {
+        this.receiving = false;
+        this.receiveElapsed = 0;
+        this.plan = this.defaultPlan();
+      }
+
+      if (incoming) {
+        this.receiveElapsed += dt;
         const secondsToTop = Math.abs((puck.y - FIELD.puckRadius) / Math.min(puck.vy, -0.05));
         target = puck.x + puck.vx * secondsToTop;
       }
@@ -266,17 +331,22 @@
         this.errorTimer = randomRange(0.18, 0.3);
       }
 
-      target = clamp(target + this.errorX, half, 1 - half);
-      const delta = clamp(target - this.paddle.x, -settings.cpuSpeed * dt, settings.cpuSpeed * dt);
+      if (incoming && this.receiveElapsed < this.plan.reactionDelay) {
+        target = this.paddle.x + (target - this.paddle.x) * 0.18;
+      }
+
+      target = clamp(target + this.errorX + this.plan.offset, half, 1 - half);
+      const speedScale = incoming ? this.plan.speedScale : 0.58;
+      const moveSpeed = settings.cpuSpeed * speedScale;
+      const delta = clamp(target - this.paddle.x, -moveSpeed * dt, moveSpeed * dt);
       this.paddle.setX(this.paddle.x + delta, dt);
 
-      const shouldCharge = puck.vy < 0 && puck.y <= settings.cpuChargeStartY && Math.random() <= settings.cpuChargeDiscipline;
-      if (shouldCharge) {
-        this.charge.start();
-      } else if (puck.vy >= 0 || puck.y > 0.76) {
+      if (incoming && this.plan.power && puck.y <= settings.cpuChargeStartY) {
+        this.charge.active = true;
+        this.charge.elapsed = FIELD.maxCharge;
+      } else {
         this.charge.release();
       }
-      this.charge.update(dt);
     }
   }
 
@@ -305,6 +375,10 @@
       this.playerCharge.release();
       this.puck.reset(true);
       this.phase = "playing";
+      dom.safetyOverlay.hidden = true;
+      dom.matchOverlay.hidden = true;
+      dom.hud.hidden = false;
+      dom.chargeGauge.hidden = false;
       this.updateScore();
       dom.pauseButton.textContent = "一時停止";
     }
@@ -323,6 +397,7 @@
       this.cpu.charge.release();
       dom.hud.hidden = true;
       dom.chargeGauge.hidden = true;
+      dom.matchOverlay.hidden = true;
       dom.safetyOverlay.hidden = false;
       dom.pauseButton.textContent = "一時停止";
       dom.permissionMessage.textContent = "";
@@ -350,12 +425,33 @@
       this.pointFlash[side === "player" ? "top" : "bottom"] = 0.28;
       this.playerCharge.release();
       this.cpu.charge.release();
+
+      if (this.score[side] >= FIELD.winScore) {
+        this.finishMatch(side);
+        return;
+      }
+
       this.puck.reset(true);
       if (side === "player") {
         this.puck.vy = -Math.abs(this.puck.vy);
       } else {
         this.puck.vy = Math.abs(this.puck.vy);
       }
+    }
+
+    finishMatch(winner) {
+      this.phase = "ended";
+      this.chargePointerId = null;
+      this.playerCharge.release();
+      this.cpu.charge.release();
+      this.puck.vx = 0;
+      this.puck.vy = 0;
+      this.puck.stopped = true;
+      dom.resultTitle.textContent = winner === "player" ? "YOU WIN!" : "YOU LOSE...";
+      dom.hud.hidden = true;
+      dom.chargeGauge.hidden = true;
+      dom.matchOverlay.hidden = false;
+      dom.pauseButton.textContent = "一時停止";
     }
 
     update(dt) {
@@ -434,10 +530,11 @@
     reflectFromPaddle(paddle, chargeRatio, direction) {
       const puck = this.puck;
       const settings = DIFFICULTIES[this.difficulty];
+      const cpuMisHit = paddle.side === "cpu" && this.cpu.plan?.miss;
       const hitOffset = clamp((puck.x - paddle.x) / (FIELD.paddleWidth / 2), -1, 1);
       const chargeBoost = 1 + chargeRatio * 1.35;
       const baseSpeed = 0.54;
-      const sideAccuracy = paddle.side === "cpu" ? settings.bounceAccuracy : 0.04;
+      const sideAccuracy = paddle.side === "cpu" ? settings.bounceAccuracy + (cpuMisHit ? 0.14 : 0) : 0.04;
       puck.vy = direction * clamp(baseSpeed * chargeBoost + Math.abs(puck.vy) * 0.38, 0.52, 1.36);
       puck.vx = clamp(
         hitOffset * 0.38 + paddle.vx * 0.18 + randomRange(-sideAccuracy, sideAccuracy),
@@ -750,9 +847,6 @@
       return;
     }
 
-    dom.safetyOverlay.hidden = true;
-    dom.hud.hidden = false;
-    dom.chargeGauge.hidden = false;
     dom.permissionMessage.textContent = "";
     game.start(selectedDifficulty());
   }
@@ -774,6 +868,8 @@
     dom.pauseButton.addEventListener("click", () => game.togglePause());
     dom.restartButton.addEventListener("click", () => game.restart());
     dom.exitButton.addEventListener("click", () => game.exit());
+    dom.playAgainButton.addEventListener("click", () => game.start(game.difficulty));
+    dom.titleButton.addEventListener("click", () => game.exit());
 
     canvas.addEventListener("pointerdown", (event) => game.handleBoardPointerDown(event));
     canvas.addEventListener("pointerup", (event) => game.handleBoardPointerUp(event));

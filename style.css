@@ -218,7 +218,8 @@ button {
   background: #ff3e47;
 }
 
-.safety-overlay {
+.safety-overlay,
+.match-overlay {
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -233,7 +234,12 @@ button {
   backdrop-filter: blur(8px);
 }
 
-.modal {
+.match-overlay {
+  z-index: 32;
+}
+
+.modal,
+.result-modal {
   width: min(100%, 25rem);
   max-height: 92vh;
   overflow: auto;
@@ -256,6 +262,15 @@ h1 {
   color: #ffffff;
   font-size: 1.8rem;
   line-height: 1.15;
+  letter-spacing: 0;
+}
+
+h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(2.3rem, 13vw, 4.4rem);
+  line-height: 1;
+  text-align: center;
   letter-spacing: 0;
 }
 
@@ -347,17 +362,37 @@ h1 {
   line-height: 1.45;
 }
 
-.primary-button {
+.primary-button,
+.secondary-button {
   width: 100%;
   margin-top: 0.55rem;
   padding: 0.82rem 1rem;
+}
+
+.primary-button {
   background: #ff4f66;
   color: #fffafd;
   box-shadow: 0 0.9rem 1.8rem rgba(255, 79, 102, 0.25);
 }
 
+.secondary-button {
+  min-height: 2.62rem;
+  border-radius: 8px;
+  border: 1px solid rgba(247, 251, 255, 0.18);
+  background: rgba(247, 251, 255, 0.08);
+  color: #f7fbff;
+  font-weight: 850;
+}
+
+.result-actions {
+  display: grid;
+  gap: 0.52rem;
+  margin-top: 1.2rem;
+}
+
 .hud-button:active,
 .primary-button:active,
+.secondary-button:active,
 .difficulty-options label:active {
   transform: translateY(1px);
 }

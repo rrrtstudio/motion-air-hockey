@@ -29,7 +29,7 @@
       </div>
 
       <div class="version-badge" aria-label="Version">
-        <span>v0.0.2</span>
+        <span>v0.0.3</span>
         <span>Experimental</span>
       </div>
 
@@ -72,6 +72,17 @@
           </fieldset>
           <p class="permission-message" id="permissionMessage" aria-live="polite"></p>
           <button class="primary-button" id="startButton" type="button">開始</button>
+        </div>
+      </section>
+
+      <section class="match-overlay" id="matchOverlay" aria-labelledby="resultTitle" hidden>
+        <div class="result-modal">
+          <p class="kicker">MATCH END</p>
+          <h2 id="resultTitle">YOU WIN!</h2>
+          <div class="result-actions">
+            <button class="primary-button" id="playAgainButton" type="button">もう一度遊ぶ</button>
+            <button class="secondary-button" id="titleButton" type="button">タイトルへ戻る</button>
+          </div>
         </div>
       </section>
     </main>
