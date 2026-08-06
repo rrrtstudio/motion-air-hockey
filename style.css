@@ -172,6 +172,22 @@ button {
   box-shadow: 0 0 0.7rem currentColor;
 }
 
+.charge-gauge.is-max .charge-red {
+  animation: chargeMaxPulse 760ms ease-in-out infinite alternate;
+}
+
+@keyframes chargeMaxPulse {
+  from {
+    box-shadow: 0 0 0.55rem currentColor;
+    filter: saturate(1.15) brightness(1);
+  }
+
+  to {
+    box-shadow: 0 0 1.25rem currentColor;
+    filter: saturate(1.45) brightness(1.28);
+  }
+}
+
 .charge-purple {
   color: #9b5cff;
   background: #9b5cff;

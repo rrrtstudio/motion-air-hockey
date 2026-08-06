@@ -25,6 +25,8 @@
     puckRadius: 0.027,
     maxCharge: 3,
     stopSpeed: 0.065,
+    tiltMaxDegrees: 45,
+    tiltDeadZoneDegrees: 4,
   };
 
   const DIFFICULTIES = {
@@ -52,7 +54,6 @@
   };
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-  const lerp = (a, b, t) => a + (b - a) * t;
   const randomRange = (min, max) => min + Math.random() * (max - min);
   const speedOf = (puck) => Math.hypot(puck.vx, puck.vy);
 
@@ -60,27 +61,21 @@
     constructor() {
       this.available = false;
       this.permissionGranted = false;
-      this.baseGamma = null;
-      this.baseBeta = null;
-      this.gravity = { x: 0, y: 0, z: 0 };
-      this.impulseX = 0;
-      this.targetX = 0.5;
+      this.tiltDegrees = 0;
       this.x = 0.5;
       this.previousX = 0.5;
       this.vx = 0;
       this.samples = 0;
       this.status = "";
       this.boundOrientation = (event) => this.handleOrientation(event);
-      this.boundMotion = (event) => this.handleMotion(event);
     }
 
     async requestAccess() {
       const hasOrientation = "DeviceOrientationEvent" in window;
-      const hasMotion = "DeviceMotionEvent" in window;
-      this.available = hasOrientation || hasMotion;
+      this.available = hasOrientation;
 
       if (!this.available) {
-        this.status = "スマホのモーションセンサーが見つかりません。スマホブラウザで開いてください。";
+        this.status = "スマホのジャイロセンサーが見つかりません。スマホブラウザで開いてください。";
         return false;
       }
 
@@ -91,13 +86,6 @@
           permissionRequests.push({
             type: "orientation",
             request: window.DeviceOrientationEvent.requestPermission(),
-          });
-        }
-
-        if (typeof window.DeviceMotionEvent?.requestPermission === "function") {
-          permissionRequests.push({
-            type: "motion",
-            request: window.DeviceMotionEvent.requestPermission(),
           });
         }
 
@@ -114,10 +102,6 @@
           return false;
         }
 
-        if (denied?.type === "motion") {
-          this.status = "加速度センサーの許可が必要です。";
-          return false;
-        }
       } catch (error) {
         this.status = "センサー許可を取得できませんでした。HTTPSのページで開いてください。";
         return false;
@@ -126,18 +110,12 @@
       this.permissionGranted = true;
       this.reset();
       window.removeEventListener("deviceorientation", this.boundOrientation);
-      window.removeEventListener("devicemotion", this.boundMotion);
       window.addEventListener("deviceorientation", this.boundOrientation, { passive: true });
-      window.addEventListener("devicemotion", this.boundMotion, { passive: true });
       return true;
     }
 
     reset() {
-      this.baseGamma = null;
-      this.baseBeta = null;
-      this.gravity = { x: 0, y: 0, z: 0 };
-      this.impulseX = 0;
-      this.targetX = 0.5;
+      this.tiltDegrees = 0;
       this.x = 0.5;
       this.previousX = 0.5;
       this.vx = 0;
@@ -146,51 +124,19 @@
 
     handleOrientation(event) {
       const gamma = Number(event.gamma);
-      const beta = Number(event.beta);
-      if (!Number.isFinite(gamma) || !Number.isFinite(beta)) {
+      if (!Number.isFinite(gamma)) {
         return;
       }
 
-      if (this.baseGamma === null || this.baseBeta === null) {
-        this.baseGamma = gamma;
-        this.baseBeta = beta;
-      }
-
       this.samples += 1;
-      const tiltX = clamp((gamma - this.baseGamma) / 24, -1, 1);
-      const tiltAssist = clamp((beta - this.baseBeta) / 48, -0.25, 0.25);
-      this.targetX = clamp(0.5 + tiltX * 0.42 + tiltAssist * 0.12 + this.impulseX, 0, 1);
-    }
-
-    handleMotion(event) {
-      const source = event.accelerationIncludingGravity || event.acceleration;
-      if (!source) {
-        return;
-      }
-
-      const raw = {
-        x: Number(source.x) || 0,
-        y: Number(source.y) || 0,
-        z: Number(source.z) || 0,
-      };
-
-      this.gravity.x = lerp(this.gravity.x, raw.x, 0.08);
-      this.gravity.y = lerp(this.gravity.y, raw.y, 0.08);
-      this.gravity.z = lerp(this.gravity.z, raw.z, 0.08);
-
-      const dynamicX = raw.x - this.gravity.x;
-      const rotation = event.rotationRate || {};
-      const roll = Number(rotation.gamma) || 0;
-      this.impulseX = clamp(this.impulseX + dynamicX * 0.012 + roll * 0.0006, -0.42, 0.42);
-      this.targetX = clamp(this.targetX + this.impulseX * 0.22, 0, 1);
-      this.samples += 1;
+      const clampedTilt = clamp(gamma, -FIELD.tiltMaxDegrees, FIELD.tiltMaxDegrees);
+      this.tiltDegrees = Math.abs(clampedTilt) <= FIELD.tiltDeadZoneDegrees ? 0 : clampedTilt;
     }
 
     update(dt) {
-      this.impulseX *= Math.pow(0.04, dt);
       const previousX = this.x;
-      const smoothing = this.samples > 0 ? 16 : 8;
-      this.x = lerp(this.x, this.targetX, 1 - Math.exp(-smoothing * dt));
+      this.x = 0.5 + this.tiltDegrees / (FIELD.tiltMaxDegrees * 2);
+      this.x = clamp(this.x, 0, 1);
       this.previousX = previousX;
       this.vx = dt > 0 ? (this.x - previousX) / dt : 0;
     }
@@ -211,6 +157,11 @@
     }
 
     release() {
+      this.active = false;
+      this.elapsed = 0;
+    }
+
+    consume() {
       this.active = false;
       this.elapsed = 0;
     }
@@ -465,6 +416,7 @@
       if (previous.y < bottomLine && puck.y >= bottomLine && puck.vy > 0) {
         if (this.player.contains(puck.x)) {
           this.reflectFromPaddle(this.player, this.playerCharge.ratio(), -1);
+          this.playerCharge.consume();
           puck.y = bottomLine;
           return;
         }
@@ -473,7 +425,7 @@
       if (previous.y > topLine && puck.y <= topLine && puck.vy < 0) {
         if (this.cpu.paddle.contains(puck.x)) {
           this.reflectFromPaddle(this.cpu.paddle, this.cpu.charge.ratio(), 1);
-          this.cpu.charge.release();
+          this.cpu.charge.consume();
           puck.y = topLine;
         }
       }
@@ -571,6 +523,7 @@
       dom.chargeSegments.forEach((segment, index) => {
         segment.classList.toggle("is-active", ratio >= (index + 1) / dom.chargeSegments.length);
       });
+      dom.chargeGauge.classList.toggle("is-max", ratio >= 1);
       dom.chargeGauge.style.setProperty("--charge", String(ratio));
     }
   }
