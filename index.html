@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#0b1018" />
+    <title>Motion Air Hockey</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <main class="game-shell" aria-label="Motion Air Hockey">
+      <canvas id="gameCanvas" aria-label="Motion Air Hockey game board"></canvas>
+
+      <div class="top-hud" id="hud" hidden>
+        <output class="score-board" aria-label="Score">
+          <span id="playerScore">0</span>
+          <span class="score-separator">-</span>
+          <span id="cpuScore">0</span>
+        </output>
+        <div class="hud-actions" aria-label="Game controls">
+          <button class="hud-button" id="pauseButton" type="button">一時停止</button>
+          <button class="hud-button" id="restartButton" type="button">リスタート</button>
+          <button class="hud-button" id="exitButton" type="button">終了</button>
+        </div>
+      </div>
+
+      <div class="version-badge" aria-label="Version">
+        <span>v0.0.1</span>
+        <span>Experimental</span>
+      </div>
+
+      <aside class="charge-gauge" id="chargeGauge" aria-label="Charge gauge" hidden>
+        <div class="charge-stack">
+          <span class="charge-segment charge-purple"></span>
+          <span class="charge-segment charge-blue"></span>
+          <span class="charge-segment charge-green"></span>
+          <span class="charge-segment charge-yellow"></span>
+          <span class="charge-segment charge-orange"></span>
+          <span class="charge-segment charge-red"></span>
+        </div>
+      </aside>
+
+      <section class="safety-overlay" id="safetyOverlay" aria-labelledby="safetyTitle">
+        <div class="modal">
+          <p class="kicker">Motion Air Hockey</p>
+          <h1 id="safetyTitle">安全確認</h1>
+          <ul class="safety-list">
+            <li>周囲に人がいないこと</li>
+            <li>家具やガラスに注意</li>
+            <li>スマホをしっかり持つこと</li>
+          </ul>
+          <fieldset class="difficulty-field">
+            <legend>CPU</legend>
+            <div class="difficulty-options" id="difficultyOptions">
+              <label>
+                <input type="radio" name="difficulty" value="easy" checked />
+                <span>Easy</span>
+              </label>
+              <label>
+                <input type="radio" name="difficulty" value="normal" />
+                <span>Normal</span>
+              </label>
+              <label>
+                <input type="radio" name="difficulty" value="hard" />
+                <span>Hard</span>
+              </label>
+            </div>
+          </fieldset>
+          <p class="permission-message" id="permissionMessage" aria-live="polite"></p>
+          <button class="primary-button" id="startButton" type="button">開始</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
